@@ -6,9 +6,11 @@ Seeded manually; the collector also auto-discovers new high-volume political mar
 # Known condition IDs for currently active markets
 # Format: { condition_id: human_label }
 WATCHLIST = {
-    # Iran / Middle East — long-dated, meaningful liquidity
+    # Hormuz / Iran — highest liquidity active geopolitical market
+    "0x348cd9adf4f6855f58bd9c6dbf9ff251c4142ef77233a5dc95c65b4b61cd2187": "Strait of Hormuz traffic normal by end of June 2026",
+
+    # Iran regime
     "0x6ab0ce92e138eec9776d055e052140ff284f885fb8a54c74a944316e4a2e4d80": "Saeed Jalili head of state in Iran end of 2026",
-    "0xcba13d2eec9eceed57bd08d8157bd01fff8a54bef61baa6d9303fb2c3cd75c5a": "Netherlands warships through Strait of Hormuz by June 30",
 
     # Colombia / Latin America
     "0xc6e54956b79ddf6f8640df06eea9ffb1f5e558907b2a9031aa00cefeb5f3ab22": "US strike on Colombia by Dec 31",
