@@ -347,7 +347,8 @@ def run_once(con: sqlite3.Connection) -> None:
             write_snapshot(con, snap)
             check_alert(snap, label)
             p = snap.get("price_yes")
-            print(f"  {label[:50]:<50}  p={p:.3f if p else 'N/A'}  ofi={snap['ofi']:+.2f}  trades={snap['trade_count']}  new_trades={n_new}")
+            p_s = f"{p:.3f}" if p else "N/A"
+            print(f"  {label[:50]:<50}  p={p_s}  ofi={snap['ofi']:+.2f}  trades={snap['trade_count']}  new_trades={n_new}")
         else:
             print(f"  {label[:50]:<50}  (no trades this bucket)")
 
