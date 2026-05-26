@@ -5,3 +5,4 @@ __pycache__/
 data/training_sequences.json
 *.log
 .DS_Store
+.ssh/
