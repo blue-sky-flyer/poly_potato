@@ -19,7 +19,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from watchlist import WATCHLIST, DISCOVERY_KEYWORDS, MIN_LIQUIDITY
+from watchlist import WATCHLIST, MIN_LIQUIDITY
 
 ROOT        = Path(__file__).parent
 DB_PATH     = ROOT / "data" / "poly_potato.db"
@@ -97,24 +97,39 @@ def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 def discover_markets(con: sqlite3.Connection) -> dict[str, str]:
     """
-    Return {condition_id: question} for all watched + newly discovered markets.
+    Return {condition_id: question} for all markets above MIN_LIQUIDITY threshold,
+    plus any manually pinned markets from WATCHLIST regardless of liquidity.
+    Paginates through all active Polymarket markets — no keyword filter.
     """
     active = dict(WATCHLIST)
 
-    try:
-        markets = _get("https://gamma-api.polymarket.com/markets?active=true&limit=200&order=volume&ascending=false")
-        for m in markets:
-            q   = m.get("question", "").lower()
-            liq = float(m.get("liquidity", 0))
+    offset = 0
+    page   = 100
+    while True:
+        try:
+            batch = _get(
+                f"https://gamma-api.polymarket.com/markets"
+                f"?active=true&limit={page}&offset={offset}"
+                f"&order=liquidity&ascending=false"
+            )
+        except Exception as e:
+            print(f"  [discovery] warning at offset {offset}: {e}")
+            break
+
+        if not batch:
+            break
+
+        for m in batch:
             cid = m.get("conditionId", "")
-            if not cid:
+            liq = float(m.get("liquidity", 0) or 0)
+            if not cid or liq < MIN_LIQUIDITY:
                 continue
-            if liq < MIN_LIQUIDITY:
-                continue
-            if any(kw in q for kw in DISCOVERY_KEYWORDS):
-                active.setdefault(cid, m.get("question", ""))
-    except Exception as e:
-        print(f"  [discovery] warning: {e}")
+            active.setdefault(cid, m.get("question", ""))
+
+        if len(batch) < page:
+            break
+        offset += page
+        time.sleep(0.2)
 
     # Upsert into markets table
     now = int(time.time())
