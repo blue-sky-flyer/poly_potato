@@ -23,8 +23,21 @@ MODEL_PATH = ROOT / "data" / "hmm_model.pkl"
 # Scoring thresholds
 P_ACCUM_ALERT     = 0.50   # P(accumulation) triggers normal alert
 P_ACCUM_EMERGENCY = 0.85   # P(accumulation) triggers emergency (repeat until ack)
+MIN_PRICE_FOR_ALERT = 0.03  # don't alert if market already resolved near zero
 MAX_PRICE_FOR_ALERT = 0.80  # don't alert if market already near resolution
 MIN_HOURLY_BUCKETS  = 3     # need at least 3 hours of data to score
+
+# Keywords in market name that indicate sports/entertainment — skip alerting
+SPORTS_KEYWORDS = [
+    "atp", "wta", "roland garros", "wimbledon", "us open", "australian open",
+    "nba", "nfl", "nhl", "mlb", "nba finals", "world series", "super bowl",
+    "fifa", "world cup", "champions league", "premier league", "la liga",
+    "ufc", "boxing", "mma",
+    "moneyline", "spread", "o/u", "over/under", "1h ", "map ",
+    "esports", "esl", "iem", "lol:", "cs2", "dota",
+    "oscars", "emmy", "grammy", "golden globe",
+    "temperature", "weather", "celsius", "fahrenheit",
+]
 
 HOUR_SECS  = 3600
 LOOKBACK   = 7 * 24 * HOUR_SECS  # use last 7 days of snapshots
@@ -142,7 +155,12 @@ def score_markets(con: sqlite3.Connection, model) -> None:
         name = (label or question or cid[:16])[:50]
         print(f"  {name:<50} price={price:.3f}  P(accum)={p_accum:.3f}")
 
-        if p_accum < P_ACCUM_ALERT or price >= MAX_PRICE_FOR_ALERT:
+        if p_accum < P_ACCUM_ALERT:
+            continue
+        if price < MIN_PRICE_FOR_ALERT or price >= MAX_PRICE_FOR_ALERT:
+            continue
+        name_lower = name.lower()
+        if any(kw in name_lower for kw in SPORTS_KEYWORDS):
             continue
 
         last_alerted = alert_state.get(cid, 0)
