@@ -24,7 +24,7 @@ MODEL_PATH = ROOT / "data" / "hmm_model.pkl"
 P_ACCUM_ALERT     = 0.50   # P(accumulation) triggers normal alert
 P_ACCUM_EMERGENCY = 0.85   # P(accumulation) triggers emergency (repeat until ack)
 MIN_PRICE_FOR_ALERT = 0.03  # don't alert if market already resolved near zero
-MAX_PRICE_FOR_ALERT = 0.80  # don't alert if market already near resolution
+MAX_PRICE_FOR_ALERT = 0.20  # above 20 cents = market already pricing known news, no edge
 MIN_HOURLY_BUCKETS  = 3     # need at least 3 hours of data to score
 
 # Keywords in market name that indicate sports/entertainment — skip alerting
