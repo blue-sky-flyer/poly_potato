@@ -163,6 +163,17 @@ def score_markets(con: sqlite3.Connection, model) -> None:
         if any(kw in name_lower for kw in SPORTS_KEYWORDS):
             continue
 
+        # Require price to have been below 0.08 in the last 48h —
+        # distinguishes spike-from-floor (insider) from market sitting at
+        # elevated price due to public news (no edge)
+        cutoff_48h = now - 48 * 3600
+        baseline = con.execute("""
+            SELECT MIN(price_yes) FROM market_snapshots
+            WHERE condition_id = ? AND bucket_start >= ? AND price_yes IS NOT NULL
+        """, (cid, cutoff_48h)).fetchone()[0]
+        if baseline is None or baseline >= 0.08:
+            continue
+
         last_alerted = alert_state.get(cid, 0)
         if now - last_alerted < ALERT_COOLDOWN_SECS:
             print(f"    → cooldown active, skipping alert")
