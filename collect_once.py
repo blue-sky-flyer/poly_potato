@@ -181,12 +181,19 @@ def score_markets(con: sqlite3.Connection, model) -> None:
 
         priority = 2 if p_accum >= P_ACCUM_EMERGENCY else 1
         title    = f"{'STRONG ' if p_accum >= P_ACCUM_EMERGENCY else ''}Accumulation: {name[:30]}"
-        body     = (
+
+        # Build Google News search URL for quick news check
+        import urllib.parse
+        news_query = urllib.parse.quote(name[:60])
+        news_url   = f"https://news.google.com/search?q={news_query}&hl=en-US&gl=US&ceid=US:en"
+
+        body = (
             f"P(accum)={p_accum:.0%}  price={price:.3f}\n"
-            f"{len(hourly)} hours of data"
+            f"{len(hourly)} hours of data\n"
+            f"Check news before acting: {news_url}"
         )
         market_url = f"https://polymarket.com/event/{cid}"
-        push(title, body, priority=priority, url=market_url, url_title="Open on Polymarket")
+        push(title, body, priority=priority, url=news_url, url_title="Check News First")
 
         alert_state[cid] = now
 
