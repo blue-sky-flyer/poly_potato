@@ -5,10 +5,13 @@ Runs one poll cycle, scores all markets with the trained HMM,
 sends Pushover alerts for accumulation signals, then exits.
 """
 
+import json
 import os
 import pickle
 import sqlite3
 import time
+import urllib.parse
+import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
@@ -26,6 +29,10 @@ P_ACCUM_EMERGENCY = 0.85   # P(accumulation) triggers emergency (repeat until ac
 MIN_PRICE_FOR_ALERT = 0.03  # don't alert if market already resolved near zero
 MAX_PRICE_FOR_ALERT = 0.20  # above 20 cents = market already pricing known news, no edge
 MIN_HOURLY_BUCKETS  = 3     # need at least 3 hours of data to score
+
+# GDELT news check — suppress alert if too many articles found in last 24h
+GDELT_SUPPRESS_THRESHOLD = 5   # >= 5 articles = news-driven, suppress
+GDELT_WARN_THRESHOLD     = 1   # 1-4 articles = flag but still alert
 
 # Keywords in market name that indicate sports/entertainment — skip alerting
 SPORTS_KEYWORDS = [
@@ -101,6 +108,32 @@ def forward_filter(model, X: np.ndarray) -> np.ndarray:
             )
     log_norm = np.logaddexp.reduce(log_alpha, axis=1, keepdims=True)
     return np.exp(log_alpha - log_norm)
+
+
+# ── GDELT news check ─────────────────────────────────────────────────────────
+
+def gdelt_article_count(market_name: str, hours: int = 24) -> tuple[int, str]:
+    """
+    Query GDELT for articles mentioning this market in the last N hours.
+    Returns (article_count, top_headline).
+    Fails open — returns (0, '') on any error so alerts aren't suppressed by GDELT outage.
+    """
+    query    = urllib.parse.quote(market_name[:80])
+    timespan = hours * 60  # GDELT uses minutes
+    url = (
+        f"https://api.gdeltproject.org/api/v2/doc/doc"
+        f"?query={query}&mode=artlist&maxrecords=10"
+        f"&timespan={timespan}&format=json"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "poly-potato/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read())
+        articles = data.get("articles", [])
+        headline = articles[0].get("title", "") if articles else ""
+        return len(articles), headline
+    except Exception:
+        return 0, ""  # fail open
 
 
 # ── Per-market alert deduplication ────────────────────────────────────────────
@@ -179,21 +212,25 @@ def score_markets(con: sqlite3.Connection, model) -> None:
             print(f"    → cooldown active, skipping alert")
             continue
 
-        priority = 2 if p_accum >= P_ACCUM_EMERGENCY else 1
-        title    = f"{'STRONG ' if p_accum >= P_ACCUM_EMERGENCY else ''}Accumulation: {name[:30]}"
+        # GDELT news check
+        n_articles, headline = gdelt_article_count(name)
+        print(f"    → GDELT: {n_articles} articles in last 24h")
+        if n_articles >= GDELT_SUPPRESS_THRESHOLD:
+            print(f"    → suppressed (news-driven): {headline[:80]}")
+            continue
 
-        # Build Google News search URL for quick news check
-        import urllib.parse
         news_query = urllib.parse.quote(name[:60])
         news_url   = f"https://news.google.com/search?q={news_query}&hl=en-US&gl=US&ceid=US:en"
+        news_note  = f"⚠️ {n_articles} news article(s) — verify before acting" if n_articles >= GDELT_WARN_THRESHOLD else "No public news found ✓"
 
-        body = (
+        priority = 2 if p_accum >= P_ACCUM_EMERGENCY else 1
+        title    = f"{'STRONG ' if p_accum >= P_ACCUM_EMERGENCY else ''}Accumulation: {name[:30]}"
+        body     = (
             f"P(accum)={p_accum:.0%}  price={price:.3f}\n"
-            f"{len(hourly)} hours of data\n"
-            f"Check news before acting: {news_url}"
+            f"{news_note}\n"
+            f"{len(hourly)} hours of data"
         )
-        market_url = f"https://polymarket.com/event/{cid}"
-        push(title, body, priority=priority, url=news_url, url_title="Check News First")
+        push(title, body, priority=priority, url=news_url, url_title="Check News")
 
         alert_state[cid] = now
 
