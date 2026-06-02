@@ -8,6 +8,7 @@ sends Pushover alerts for accumulation signals, then exits.
 import json
 import os
 import pickle
+import re
 import sqlite3
 import time
 import urllib.parse
@@ -39,11 +40,14 @@ SPORTS_KEYWORDS = [
     "atp", "wta", "roland garros", "wimbledon", "us open", "australian open",
     "nba", "nfl", "nhl", "mlb", "nba finals", "world series", "super bowl",
     "fifa", "world cup", "champions league", "premier league", "la liga",
+    "serie a", "bundesliga", "ligue 1", "fa cup", "europa league",
     "ufc", "boxing", "mma",
     "moneyline", "spread", "o/u", "over/under", "1h ", "map ",
-    "esports", "esl", "iem", "lol:", "cs2", "dota",
+    "esports", "esl", "iem", "lol:", "cs2", "dota", "valorant",
     "oscars", "emmy", "grammy", "golden globe",
     "temperature", "weather", "celsius", "fahrenheit",
+    " win on ", " win the ", "vs.", " vs ",
+    "match:", "game ", "season ", "playoff", "tournament",
 ]
 
 HOUR_SECS  = 3600
@@ -112,13 +116,31 @@ def forward_filter(model, X: np.ndarray) -> np.ndarray:
 
 # ── GDELT news check ─────────────────────────────────────────────────────────
 
+_GDELT_STRIP = re.compile(
+    r'\b(will|the|a|an|be|is|are|was|by|in|on|at|to|for|of|or|nor'
+    r'|win|end|happen|reach|hit|get|make|take|have|has|between|than'
+    r'|january|february|march|april|may|june|july|august|september'
+    r'|october|november|december|\d{4}|\d{1,2}(?:st|nd|rd|th)?)\b',
+    re.IGNORECASE
+)
+
+def _extract_search_terms(market_name: str) -> str:
+    """Strip boilerplate from a Polymarket market name to get clean search keywords."""
+    text = market_name.replace(" x ", " ").replace("?", "").replace("'s", "")
+    text = _GDELT_STRIP.sub(" ", text)
+    words = [w for w in text.split() if len(w) > 2]
+    return " ".join(words[:6])
+
+
 def gdelt_article_count(market_name: str, hours: int = 24) -> tuple[int, str]:
     """
-    Query GDELT for articles mentioning this market in the last N hours.
-    Returns (article_count, top_headline).
-    Fails open — returns (0, '') on any error so alerts aren't suppressed by GDELT outage.
+    Query GDELT for articles about this market topic in the last N hours.
+    Extracts meaningful keywords from the market name rather than searching
+    the full title literally. Returns (article_count, top_headline).
+    Fails open — returns (0, '') so alerts aren't suppressed on GDELT errors.
     """
-    query    = urllib.parse.quote(market_name[:80])
+    terms    = _extract_search_terms(market_name)
+    query    = urllib.parse.quote(terms)
     timespan = hours * 60  # GDELT uses minutes
     url = (
         f"https://api.gdeltproject.org/api/v2/doc/doc"
@@ -139,7 +161,7 @@ def gdelt_article_count(market_name: str, hours: int = 24) -> tuple[int, str]:
 # ── Per-market alert deduplication ────────────────────────────────────────────
 # Track last alert time per market so we don't spam on every 15-min run.
 
-ALERT_COOLDOWN_SECS = 4 * HOUR_SECS   # re-alert at most once per 4 hours
+ALERT_COOLDOWN_SECS = 24 * HOUR_SECS  # re-alert at most once per 24 hours
 
 _alert_state_path = ROOT / "data" / "alert_state.json"
 
